@@ -1,0 +1,143 @@
+从这里开始... 
+这是一篇简单的如何开始使用Byteman的文章。阐述了如何安装和使用Byteman注入到你的Java程序当中。本文章主要讲述了命令行中如何使用byteman。另外一篇文章介绍了如何在单元测试和集成测试中使用Byteman，以及故障注入测试。它描述了从Ant和Maven驱动Byteman。建议在阅读第二篇文章之前先阅读本文章。
+如果你想获得完整的帮助信息，你可以访问Programmer's Guide。它详细的描述了如何使用Byteman以及如何编写规则。另外，它还接啥了如何安装Byteman以及使用他们的各种方式。
+本文结构是采用FAQ的方式展示。如果你是Byteman新手，你应该从头到尾的阅读一遍，并且尝试执行其中的例子。如果你曾经使用过Byteman，只是想回顾之中的一部分，你可以试用一下连接跳转到你想要阅读的部分。然而，跳转阅读时你会发现阅读完前面的部分，对你更有帮助。
+
+我为什么要用byteman？
+如何下载和安装byteman？
+使用byteman运行一个程序？
+怎么在JVM类注入代码？
+有没有简单的方式来运行byteman？
+我如何加载规则到一个正在运行的程序？
+我怎么看这规则加载和编译？
+我如何卸载规则？
+我怎么安装的代理到一个正在运行的程序？
+我怎么运行JBoss作为byteman
+我怎么知道我的规则是正确的吗？
+我怎么知道我的规则正在运行？
+我怎样才能让我的规则跑的快吗？
+我在哪里可以下载本教程的源
+
+我为什么要用byteman？
+你可以使用Byteman修改Java程序的行为，而不用修改源代码。实际上，你可以使用Byteman修改一个正在运行的程序而不用停止再重新启动。Byteman可以很轻松的修改程序行为包括应用class或者jvm 运行时class ，像String、Thread等。
+使用Byteman最简单的例子是在代码中插入打印语句，然后观察你的程序发生了什么改变。Byteman可以读取和打印public,private和protected的字段和本地变量。它甚至可以调用方法并将计算结果显示出来。Byteman在你的程序中使用非常具体的和高度本地话的方式修改，这样做会使用非常小的性能开销。这在调试动态代码时非常有用，尤其是多线程程序时可能会在同一时间发生非常有意思的事情。Byteman也允许你调试和监视部署的应用程序，在不停止程序是可以使用debugger。
+注意，Byteman只能在Java 6或者更高的版本中使用。如果你非要在Java 5中使用Byteman,那么你只能使用Byteman 1.0.3release及之前的版本。他提供了所有基本的功能，但不支持动态加载Byteman agent和Byteman规则。
+
+如何下载和安装Byteman?
+在运行Byteman时，你需要安装Java 6或更高版本搞Jvm。为了执行本文中的例子，你要需要安装安装完整的JDK，而不是JRE。当然，如果你只是在已有的系统中使用Byteman,你也可以只安装JRE。唯一需要使用JDK的地方就是动态加载Byteman agent。如果你正在开发Java应用，那么你的电脑里肯定已经安装了JDK。
+在Byteman的项目页面下载最新的release。并将Byteman解压到一个目录中,并设置一个环境变量。
+在Linux系统中：
+export BYTEMAN_HOME=${HOME}/Downloads/byteman-1.6.0
+在windows系统中：
+set BYTEMAN_HOME=C:\Downloads\byteman-1.6.0
+在BYTEMAN_HOME目录中有bin、contrib、docs、lib、README、sample目录或文件。
+如果你在linux系统中你可以将bin目录添加到PATH变量中，这样做你可以使用Byteman的shell脚本时就不用再指定路径了：
+export PATH=${BYTEMAN_HOME}/bin:${PATH}
+windows系统在2.0.1-release之后也加入了与linux系统shell等效的.bat(批处理)文件。
+set PATH=%BYTEMAN_HOME%/bin;%PATH%
+
+使用byteman运行一个程序？
+有多种方式在Java程序中使用Byteman。最基础的方式是在java命令行中使用-javaagent选项。
+下面是一个简单的类，我们将在第一个Byteman实例中使用它：
+package org.my;
+class AppMain {
+     public static void main(String[] args) {
+		for (int i = 0; i < args.length; i++) {
+	       System.out.println(args[i]);
+	    }
+	 }
+}
+然后，编译、运行这段代码：
+> javac org/my/AppMain.java
+> java org.my.AppMain foo bar baz
+foo
+bar
+baz
+>
+让我们在main方法开始和结束的地方注入一些代码。
+首先，创建一个Byteman规则的脚本文件appmain.htm并且写入一下内容：
+RULE trace main entry
+CLASS AppMain
+METHOD main
+AT ENTRY
+IF true
+DO traceln("entering main")
+ENDRULE
+ 
+RULE trace main exit
+CLASS AppMain
+METHOD main
+AT EXIT
+IF true
+DO traceln("exiting main")
+ENDRULE
+这段脚本中描述了两个规则将被注入到Class AppMain的METHOD main中。第一个规则中的AT ENTRY表示这条规则是在方法的开始处被注入。代码注入是在IF DO部分。第一条规则中使用了一个内建的指令traceln(String)，这条指令将会打印他的参数到输出流中，并且换行。第二条规则中的AT EXIT即表示在main方法return时执行。这两条规则都包含了IF true，这表示Do部分的内容始终都会执行。你也可以尝试在DO部分使用别的JAVA表达式。
+-javaagent选项支持在所有的个人机或服务器的JVM中使用Byteman。用法如下：
+-javaagent : path_to_agent_jar = agent_option1 , agent_option_2 , . . . 
+在linux中执行
+> java -javaagent:${BYTEMAN_HOME}/lib/byteman.jar=script:appmain.btm org.my.AppMain foo bar baz 
+在windows系统中执行
+> java -javaagent:%BYTEMAN_HOME%\lib\byteman.jar=script:appmain.btm org.my.AppMain foo bar baz 
+冒号（:）之后的部分通知JVM寻找Byteman agent jar的位置是在${BYTEMAN_HOME}/lib/byteman.jar。我们只需要在等号（=）后面提供一个agent选项,script:appmain.btm，用于指示Byteman规则文件的位置。Byteman agent读取到这个选项之后从appmain.htm文件中加载和注入Byteman规则。如果要加载多个script:file规则文件,使用逗号（,）分隔即可。
+当使用-javaagent在命令行中使用Byteman agent启动JVM时。规则将被加载并且注入，在AppMain.main()方法调用之前。将得到如下输出：
+> java -javaagent:${BYTEMAN_HOME}/lib/byteman.jar=script:appmain.btm org.my.AppMain foo bar baz
+entering main
+foo
+bar
+baz
+exiting main
+>
+
+怎么在JVM类注入代码？
+我们尝试跟踪JVM操作。新建一个名为thread.btm的文件，并将一下内容写入其中：
+RULE trace thread start
+CLASS java.lang.Thread
+METHOD start()
+IF true
+DO traceln("*** start for thread: "+ $0.getName())
+ENDRULE
+这个规则是在JVM的CLASS java.lang.Thead的start()方法中注入。使用字符串拼接操作符的方式输出追踪信息。当start()方法被调用时将会创建一个的Thread实例。$0是一个特殊变量，用来表示start()方法创建的实例。当start()方法有歧义时，可以使用$1、$2表示。
+创建一个类AppMain2，该类中讲创建多个线程并执行打印操作：
+package org.my;
+class AppMain2 {
+    public static void main(String[] args) {
+        for (int i = 0; i < args.length; i++) {
+            final String arg = args[i];
+            Thread thread = new Thread(arg) {
+                public void run() {
+                System.out.println(arg);
+                }
+            };
+            thread.start();
+            try {
+                thread.join()
+            } catch (Exception e) {
+            }
+        }
+    }
+}
+修改agent选项中的script:部分，使用thread.btm脚本。另外，要往JVM的class中注入代码，我们还需要一些额外的参数或选项。
+在Linux中：
+> java -javaagent:${BYTEMAN_HOME}/lib/byteman.jar=script:thread.btm,boot:${BYTEMAN_HOME}/lib/byteman.jar -Dorg.jboss.byteman.transform.all org.my.AppMain2 foo bar baz 
+在Windows中:
+> java -javaagent:%BYTEMAN_HOME%\lib\byteman.jar=script:thread.btm,boot:%BYTEMAN_HOME%\lib\byteman.jar -Dorg.jboss.byteman.transform.all org.my.AppMain2 foo bar baz 
+Thread类是JVM内置类。也就是使用bootstrap classloader加载的类。只有Byteman的类文件也是由bootstrap classloader加载的，才可以注入代码。额外的选项就是在script后面追加的boot:${BYTEMAN_HOME}/lib/byteman.jar(注意使用逗号分割)。这个选项确保Byteman agent被安装到引导类路径中。
+Thread类是在java.lang包中。一般情况下，Byteman不会注入代码到这个包中，以免影响JVM。如果你确实需要改变这个保重的类的方法，那么需要指定系统属性org.jboss.byteman.transform.all。
+当运行这段程序，将得到以下输出：
+> java -javaagent:${BYTEMAN_HOME}/lib/byteman.jar=script:thread.btm,boot:${BYTEMAN_HOME}/lib/byteman.jar -Dorg.jboss.byteman.transform.all org.my.AppMain2 foo bar baz
+*** start for thread: foo
+foo
+*** start for thread: bar
+bar
+*** start for thread: baz
+baz
+>
+
+有没有简单的方式来运行byteman？
+在Linux系统中，脚本bmjava.sh为你包装了-javaagent选项。他的用法很像java命令，但是它能以-javaagent script:选项的方式接受Byteman规则脚本。并且自动以boot:的方式绑定了Byteman的jar文件。所以，使用bmjava.sh可以将命令简化为：
+> bmjava.sh -l thread.btm org.my.AppMain2 foo bar baz 
+注意：-l选项用来指定规则脚本
+在Windows系统中，2.0.1-release以及之后的版本也可以使用等效的批处理bmjava.bat。所以可以使用命令bmjava。简化后的命令如下：
+> bmjava -l thread.btm org.my.AppMain2 foo bar baz
+注意：以上操作需要在PATH环境天亮中包含${BYTEMAN_HOME}/bin目录(在Windows中是%BYTEMAN_HOME%/bin)。
+
