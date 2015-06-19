@@ -8,15 +8,15 @@
 使用byteman运行一个程序？
 怎么在JVM类注入代码？
 有没有简单的方式来运行byteman？
-我如何加载规则到一个正在运行的程序？
-我怎么看这规则加载和编译？
-我如何卸载规则？
-我怎么安装的代理到一个正在运行的程序？
-我怎么运行JBoss作为byteman
-我怎么知道我的规则是正确的吗？
-我怎么知道我的规则正在运行？
-我怎样才能让我的规则跑的快吗？
-我在哪里可以下载本教程的源
+如何在运行中的程序中加载规则？
+如何查看规则加载和编译状态？
+如何卸载规则？
+如何安装agent到一个正在运行的程序？
+如何在JBoss AS中使用Byteman?
+怎么确定我的规则是正确？
+怎么确定我的规则正在运行？
+怎样才能让我的规则运行的更快？
+从哪里可以下载本文章的的源码？
 
 我为什么要用byteman？
 你可以使用Byteman修改Java程序的行为，而不用修改源代码。实际上，你可以使用Byteman修改一个正在运行的程序而不用停止再重新启动。Byteman可以很轻松的修改程序行为包括应用class或者jvm 运行时class ，像String、Thread等。
@@ -140,4 +140,274 @@ baz
 在Windows系统中，2.0.1-release以及之后的版本也可以使用等效的批处理bmjava.bat。所以可以使用命令bmjava。简化后的命令如下：
 > bmjava -l thread.btm org.my.AppMain2 foo bar baz
 注意：以上操作需要在PATH环境天亮中包含${BYTEMAN_HOME}/bin目录(在Windows中是%BYTEMAN_HOME%/bin)。
+
+如何在运行中的程序中加载规则？
+如果你的程序已经在运行，并且是一个长时运行程序，那么如何在程序中加载规则、卸载规则或重新加载一个新的规则？你可以以agent监听器的方式启动Byteman。这个监听器将允许你往程序中加载规则、卸载规则、重载一个新的规则，甚至还可以检查规则加载的状态。
+以下代码是一个长时程序事例：
+package org.my;
+import java.io.DataInputStream;
+ 
+class AppMain3
+{
+    public static void main(String[] args)
+    {
+        try {
+        DataInputStream in = new DataInputStream(System.in);
+        String next = in.readLine();
+        while (next != null && next.length() > 0 && !next.contains("end")) {
+        final String arg = next;
+        Thread thread = new Thread(arg) {
+            public void run() {
+                System.out.println(arg);
+            }
+            };
+        thread.start();
+        try {
+            thread.join();
+        } catch (Exception e){
+        }
+        next = in.readLine();
+        }
+    } catch (Exception e) {
+    }
+    }
+}
+这段代码读取键盘输入，并输出读取的内容，当读取的内容为“end”时终止程序。我们将使用Byteman监听器的方式启动该程序，在程序等待键盘输入的时候我们可以加载或卸载规则，然后检查该规则的状态，这个规则可能处于被解析、已经注入到程序中、类型检查或已经执行。
+agent监听器开启的方法是在命令行的agent选项中添加listener:true。
+在Linux系统中执行如下：
+> java -javaagent:${BYTEMAN_HOME}/lib/byteman.jar=listener:true,boot:${BYTEMAN_HOME}/lib/byteman.jar -Dorg.jboss.byteman.transform.all org.my.AppMain3
+在Windows系统中执行：
+> java -javaagent:%BYTEMAN_HOME%\lib\byteman.jar=listener:true,boot:%BYTEMAN_HOME%\lib\byteman.jar -Dorg.jboss.byteman.transform.all org.my.AppMain3
+这个监听器会开启一个网络监听。注意：当没有规则加载的时候，程序的的行为不会发生任何变化，仅输出我们输入的内容。
+> java  -javaagent:${BYTEMAN_HOME}/lib/byteman.jar=listener:true,boot:${BYTEMAN_HOME}/lib/byteman.jar -Dorg.jboss.byteman.transform.all org.my.AppMain3
+foo
+foo
+bar
+bar
+在Linux中使用bmsubmit.sh脚本加载规则到监听器中。执行该脚本，不传递任何参数，则会得到所有已安装的规则的状态
+> bmsubmit.sh
+no rules installed
+>
+请注意，执行这个之前必须保证AppMain3正在运行，并且启动监听器。
+在Windows系统中，2.0.1-release之后的版本中包含等效脚本bmsubmit.bat，你可以在命令行中执行bmsubmit
+> bmsubmit
+no rules installed
+>
+如果你运行的是早期的版本，则需要使用使用java命令给监听器发送指令
+> java -classpath %BYTEMAN_HOME%\lib\byteman-submit.jar org.jboss.byteman.agent.submit.Submit
+no rules installed
+>
+现在我们可以使用bmsubmit.sh给正在运行的程序加载规则
+> bmsubmit.sh -l thread.btm
+install rule trace thread start
+>
+在Windows系统中你可以使用等效甲苯bmsubmit.bat。如果是早于2.0.1之前的版本，你需要执行Submit.main()并传递参数
+> java -classpath %BYTEMAN_HOME%\lib\byteman-submit.jar org.jboss.byteman.agent.submit.Submit -l thread.btm
+install rule trace thread start
+>
+然后我们检查规则的安装状态，我们将看到规则已被加载，解析并且注入到方法Thread.start()中。如果规则未能正确解析，注入将不会执行。并且会输出错误的详细信息
+> bmsubmit.sh
+# File thread.btm line 4
+RULE trace thread start
+CLASS java.lang.Thread
+METHOD start()
+AT ENTRY
+IF true
+DO traceln("*** start for thread: "+ $0.getName())
+ENDRULE
+Transformed in:
+loader: sun.misc.Launcher$AppClassLoader@5acac268
+trigger method: java.lang.Thread.start() void
+>
+切换到正在运行的程序的中，并且输入。将会看到规则被执行
+. . .
+bar
+bar
+baz
+*** start for thread: baz
+baz
+mumble
+*** start for thread: mumble
+mumble
+
+
+如何查看规则加载和编译状态？
+再次执行bmsubmit.sh,我们将会看到规则编译成功
+> bmsubmit.sh
+# File thread.btm line 4
+RULE trace thread start
+CLASS java.lang.Thread
+METHOD start()
+AT ENTRY
+IF true
+DO traceln("*** start for thread: "+ $0.getName())
+ENDRULE
+Transformed in:
+loader: sun.misc.Launcher$AppClassLoader@5acac268
+trigger method: java.lang.Thread.start() void
+compiled successfully
+>
+输出的最后一行告诉我们编译成功了。这也就意味着规则已经通过了类型检查和执行。类型检查只发生在规则的第一次触发，在上面的例子中，当在命令行中输入baz时，Thread.start()方法被调用时触发了类型检查。如果类型检查失败，注入将不会执行。 并且会输出错误的详细信息。注入的代码只有在规则卸载的时候才会被移除。
+
+
+如何卸载规则？
+我们可以通过bmsubmit.sh(在Windows中用Submit类)卸载规则，还原Tnread.start()的行为
+> bmsubmit.sh -u thread.btm
+uninstall RULE trace thread start
+> bmsubmit.sh
+no rules installed
+>
+-u标记后面执行要卸载的规则脚本文件的文件名。这个规则文件中所包含的所有规则都会被卸载。我们注入的IF DO代码将会被移除。然后切换到正在执行的程序中输入内容，现在就只会打印输入的内容了
+. . .
+mumble
+*** start for thread: mumble
+mumble
+grumble
+grumble
+bletch
+bletch
+end
+>
+值得注意的是，如果你没有卸载已经加载的规则，然后你又把规则文件修改了并加载到程序中，Byteman将会卸载之前注入的代码，并重新注入新的代码。
+
+
+如何安装agent到一个正在运行的程序？
+如果你启动了一个长时程序，并且没有加载Byteman agent。你不需要重启程序也可以使用Byteman。但是你所使用的虚拟机必须是Hostspot、JRockit、OpenJDK JVM中的一个。这些虚拟机允许你安装代理到正在运行的程序中。
+在Linux系统中，可以使用脚本bminstall.sh来安装agent到程序中
+> bminstall.sh 13101
+>
+注意，并不是所有的虚拟机都允许动态加载agent。已知的有，在Linux系统中Oracle JVM,OpenJDK和JRockit JVMs,在OSX系统中Oracle JVMs和OpenJDK JVMs是允许动态加载agent的。IBM JVMs或者是Windows中的任何JVM都还不行。
+在Windows系统中，如果是2.0.1或者之后的版本，可以使用等效的脚本bminstall.bat。其他的版本，你只能使用Install.main()传递参数的方式安装
+> java -classpath %BYTEMAN_HOME%\lib\byteman-install.jar org.jboss.byteman.agent.install.Install 13101
+>
+后面的数值是Java程序的进程ID。除了进程ID，你也可以使用Java程序的Main方法所在的Class名。如果你是使用java -jar myapp.jar的方式启动程序，你也可以使用jar名称。我们现在不使用-javaagent选项启动AppMain3，然后通过动态安装的方式安装agent。
+> java org.my.AppMain3
+foo
+foo
+bar
+bar
+现在，执行安装脚本。在Linux系统中执行如下
+> bminstall -b -Dorg.jboss.byteman.transform.all org.my.AppMain3
+>
+bminstall.sh并没有加载任何规则脚本，只是开启了agent监听器。然后就可以通过bmsubmit.sh提交规则。如果将thread.btm规则脚本sumbit或者unsubmit到程序中，会看到AppMain3的行为被修改了。
+
+如何在JBoss AS中使用Byteman?
+如果你想在JBoss应用服务器中使用Byteman,你需要使用-javaagent选项。但是JBoss AS的启动并不是通过java命令，在JBoss AS 4,5,6版本中是通过run.sh启动，在AS 7中是通过standalone.sh 或domain.sh启动。所以，如何通过这些脚本传递-javaagent选项给JVM呢？
+在JBoss AS 4,5,6版本中，你可以通过设置JAVA_OPTS环境变量来传递参数。
+在Linux系统中设置如下
+set JAVA_OPTS="${JAVA_OPTS} -Dorg.jboss.byteman.transform.all -javaagent:${BYTEMAN_HOME}/lib/byteman.jar=script:thread.btm,boot:${BYTEMAN_HOME}/lib/byteman.jar,listener:true"
+在Windows系统中
+set JAVA_OPTS="%JAVA_OPTS% -Dorg.jboss.byteman.transform.all -javaagent:%BYTEMAN_HOME%\lib\byteman.jar=script:thread.btm,boot:%BYTEMAN_HOME%\lib\byteman.jar:listener:true"
+注意，这样设置JAVA_OPTS选项把可能设置过的其它选项也保留在其中。
+在AS 7中，你可以在AS 7安装目录的bin目录中的的配置文件中设置。在Linux系统转哦给你，该配置文件是standalone.conf或domain.conf。在Windows系统转哦给你，配置文件是standalone.conf.bat或domain.conf.bat。编辑配置文件，你会看到JAVA_OPTS,可以在其中插入-javaagent。
+如果JBoss AS已经运行，你可以通过bminstall.sh安装agent。如果你知道JBoss AS进程ID，你只需要把进程id作为参数传递给bminstall.sh
+> bminstall.sh 13101
+>
+正如前面提到的，bminstall.sh允许你使用应用程序的Main类来代替进程ID作为程序的表示。所以，安装agent到JBoss AS 4,5,6中可以使用org.jboss.Main作为参数。
+> bminstall.sh -b -Dorg.jboss.byteman.transform.all org.jboss.Main
+>
+-b标识是将agent的代码家在到bootstrap classpath。你也可以通过系统属性实现同样的效果。
+AS 7是通过java -jar jarfile的方式启动的。这种情况下，可以使用进程ID或者jar文件所在绝对路径加上jar文件名来加载agent。AS 7中的jar文件是jboss-modules.jar。所以，你可以使用一下方式加载agent到AS 7中
+> bminstall.sh -b -Dorg.jboss.byteman.transform.all $JBOSS_HOME/jboss-modules.jar
+>
+
+
+怎么确定我的规则是正确？
+当规则加载之后，执行不带任何参数的bmsubmit.sh可以检查规则是否已经被解析，或者类型错误。但是，更好的方式是提前判断这些问题。在Linux系统中，可以执行bmcheck.sh脚本
+> bmcheck.sh thread.btm
+checking rule trace thread start
+parsed rule "trace thread start" for class java.lang.Thread
+type checked rule "trace thread start"
+ 
+TestScript: no errors
+>
+在Window的2.0.1以及之后的版本有等效的脚本bmcheck.bat
+> bmcheck thread.btm
+checking rule trace thread start
+parsed rule "trace thread start" for class java.lang.Thread
+type checked rule "trace thread start"
+ 
+TestScript: no errors
+>
+对于早期的版本，你可以使用TestScript类
+> java -classpath %BYTEMAN_HOME%\lib\byteman.jar org.jboss.byteman.check.TestScript thread.btm
+checking rule trace thread start
+parsed rule "trace thread start" for class java.lang.Thread
+type checked rule "trace thread start"
+ 
+TestScript: no errors
+>
+如果规则脚本中引用了应用的class,在执行bmcheck.sh的时候就需要通过-cp指定去哪找这些类。但是这些还不够，以下是第一个例子中的规则脚本
+RULE trace main entry
+CLASS AppMain
+METHOD main
+AT ENTRY
+IF true
+DO traceln("entering main")
+ENDRULE
+这个脚本没有使用class的全限定名。当使用代理时，程序运行，org.my.AppMain会被加载，所以并不影响规则使用。但是当检查规则是，该程序并没有运行。所以Byteman并不知道去哪个包找规则中所提到的类。这里使用-p标记可以用于为类检查指定包名。
+> bmcheck.sh -p org.my -cp . appmain.btm
+checking rule trace main entry
+parsed rule "trace main entry" for class org.my.AppMain
+type checked rule "trace main entry"
+ 
+checking rule trace main exit
+parsed rule "trace main exit" for class org.my.AppMain
+type checked rule "trace main exit"
+
+TestScript: no errors
+>
+在Window中，如果使用2.0.1以及之后的版本，可以使用bmcheck.bat，并且使用-p和-cp选项
+> bmcheck -p org.my -cp . appmain.btm
+对于早期的版本，可以如用一下方式,
+> java -classpath %BYTEMAN_HOME%\lib\byteman.jar;. org.jboss.byteman.check.TestScript -p org.my thread.btm
+
+
+怎么确定我的规则正在运行？
+有时候你可能不太确定规则是否被正确的注入。也许目标用法从没被执行，也许规则的condition永远为false。再或者语法或类型错误。如果以verbose模式运行Byteman，你将能看到Byteman的追踪信息。verbose可以在系统属性中设置
+> java -Dorg.jboss.byteman.verbose -javaagent:${BYTEMAN_HOME}/lib/byteman.jar=script:appmain.btm org.my.AppMain foo bar baz
+org.jboss.byteman.agent.Transformer : possible trigger for rule trace main entry in class org.my.AppMain
+RuleTriggerMethodAdapter.injectTriggerPoint : inserting trigger into org.my.AppMain.main(java.lang.String[]) void for rule trace main entry
+org.jboss.byteman.agent.Transformer : inserted trigger for trace main entry in class org.my.AppMain
+org.jboss.byteman.agent.Transformer : possible trigger for rule trace main exit in class org.my.AppMain
+RuleTriggerMethodAdapter.injectTriggerPoint : inserting trigger into org.my.AppMain.main(java.lang.String[]) void for rule trace main exit
+org.jboss.byteman.agent.Transformer : inserted trigger for trace main exit in class org.my.AppMain
+Rule.execute called for trace main entry_0
+HelperManager.install for helper classorg.jboss.byteman.rule.helper.Helper
+calling activated() for helper classorg.jboss.byteman.rule.helper.Helper
+Default helper activated
+calling installed(trace main entry) for helper classorg.jboss.byteman.rule.helper.Helper
+Installed rule using default helper : trace main entry
+trace main entry execute
+entering main
+foo
+bar
+baz
+Rule.execute called for trace main exit_1
+HelperManager.install for helper classorg.jboss.byteman.rule.helper.Helper
+calling installed(trace main exit) for helper classorg.jboss.byteman.rule.helper.Helper
+Installed rule using default helper : trace main exit
+trace main exit execute
+exiting main
+>
+跟踪信息会将你需要的所有信息都输出。
+*当AppMain类被加载，规则也被验证并注入
+*当main方法被调用，你可以看到一条进入规则的执行信息
+*这条执行信息紧随着entry规则的追踪信息输出
+*main方法输出它应该输出的内容
+*在返回之前，输出exit规则执行的消息
+*最后输出退出规则的执行消息
+
+
+怎样才能让我的规则运行的更快？
+Byreman通过解释执行规则代码。大部分情况下它速度足够快，但是当注入代码有紧凑循环或者频繁注入方法，那么程序可能会减慢速度。你可以通过JIT编译器编译Byteman的规则的字节码来优化。第一次执行的时间会长一点，但是之后执行会快很多。
+通过设置系统属性org.jboss.byteman.compile.to.bytecode来开启规则的编译。
+> bminstall.sh -Dorg.jboss.byteman.compile.to.bytecode -b org.jboss.Main
+> bmsubmit.sh hornetq-io-rules.btm
+. . .
+
+
+从哪里可以下载本文章的的源码？
+http://downloads.jboss.org/byteman/tutorial/tutorial.zip
+改地址包含了这篇文章中的类和脚本的源码。
 
