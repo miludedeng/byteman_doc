@@ -1,1 +1,31 @@
-init
+Byteman Rule Language
+规则定义在一个脚本文件中，包含了一系列的规则和注释。注释可以单独占用一行或者卸载规则的后面面。注释的开头使用#引导：
+######################################
+# Example Rule Set
+#
+# a single rule definition
+RULE example rule
+# comment line in rule body
+ . . .
+ENDRULE
+
+规则事件
+规则时间描述目标类中的目标方法的位置指定方式。目标方法可以是静态方法、实例方法或者是构造方法。如果没有指定方法的位置，那么将默认指定方法的开始位置。所以，最基本的规则定义方式如下
+# rule skeleton
+RULE <rule name>
+CLASS <class name>
+METHOD <method name>
+BIND <bindings>
+IF   <condition>
+DO   <actions>
+ENDRULE
+RULE关键字后面可以写任何文本，是对规则的名称或描述，但至少要包含一个非空字符。RULE后面的内容并不要求是唯一的，他会在调试的时候被用来作为规则的标识。当脚本有错误被捕获到，该内容会输出。
+类和方法的名称在CLASS和METHOD关键字后面，而且必须要在同一行。类名用来唯一标识一个类，但是并不包括唯一限制的报名。方法名是用来唯一标识一个类中的方法，不包含参数列表和反悔类型。构造方法使用<init>表示。
+# class and method example
+RULE any commit on any coordinator engine
+CLASS CoordinatorEngine
+METHOD commit
+. . .
+ENDRULE
+
+
