@@ -27,5 +27,69 @@ CLASS CoordinatorEngine
 METHOD commit
 . . .
 ENDRULE
+该例中指定了一个名为CoordinatorEngine的类，不考虑它是属于哪个包。当有一个这个名字的类被加载，agent将会将一个触发点插入到名为commit的方法中。如果有多个重载的方法，将都会被插入触发点。
+通过添加方法参数类型列表和返回值类型的方式可以精确匹配一个方法，例如：
+# class and method example 2
+# RULE commit with no arguments on wst11 coordinator engine
+# CLASS com.arjuna.wst11.messaging.engines.CoordinatorEngine
+# METHOD State commit()
+# AT LINE 324
+# . . .
+# ENDRULE
+这个规则将只匹配com.arjuna.wst11.messaging.engines包里的CoordinatorEngine类，并且精确匹配无参的、返回值为State的commit方法。注意，在这个列子中State类所在的包没有指明。在类型检查时通过方法的返回值判断该类所处的包。
+上面的例子中通过AT LINE指定插入位置。跟在这个标记后面的参数必须是一个整数的行号。它指定了触发器插入到类的源码对应的行号。
+注意：
+*Byteman代理不会改变java.lang和org.jboss.byteman包中的类（可以通过设置系统属性取消这一限制，但是你必须知道你在做什么）。
+*内部类可以通过使用$与他所属的外部类分割，比如，org.my.List$Cons,Map$Entry$Wrapper。
+类规则和接口规则
+Byteman规则可以在类和接口中使用。如果CLASS关键字被INTERFACE替换，该规则将会被注入到接口的实现类中。例如下面的规则：
+# interface rule example
+# RULE commit with no arguments on any engine
+# INTERFACE com.arjuna.wst11.messaging.engines.Engine
+# METHOD commit()
+# . . .
+# ENDRULE
+这个规则会注册到接口Engine的commit方法中。如果Engine有CoordinatorEngine和ParticipanEngine，则改规则会有两个触发点。一个是在CoordinatorEngine.commit()的开头，另一个是在ParticipanEngine.commit()方法的开头。该规则保证接口的所有实现类中都会有一个触发点。
+
+重写规则
+通常，Byteman只注入到定义的类的方法中。这有时并不好用。例如：
+RULE trace Object.finalize
+CLASS java.lang.Object
+METHOD finalize
+IF TRUE
+DO System.out.println(“Finalizing “ + $0)
+ENDRULE
+打印域名被插入到Object.finalize()方法中。但是，JVM只会在重写了Object.finalize()方法的类中调用finalize方法。这个规则并不会修改重写方法。所以，在追踪时这个规则并不会被出发。除了finalize方法，还有很多中情况需要注入代码到重写的方法中。例如，Socket类有很多种子类都覆盖了bind方法。所以一个规则附着在Socket.bind()的时候，子类的bind方法被调用并不会触发规则（除非子类通过super调用了父类中的bind方法）。
+当然，会可以为没一个重载的子类方法指定一个规则。然而，这样不仅反锁，而且当代码改变的时候会很麻烦。所以，Byteman提供了一种简单的语法支持规则注入到重载的子类方法中。
+RULE trace Object.finalize
+CLASS ^java.lang.Object
+METHOD finalize
+IF TRUE
+DO System.out.println(“Finalizing “ + $0)
+ENDRULE
+^前缀加载类名的前面，通知agent这条规则应该在实现了finalize的类中注入。这种方式在接口中也适用，用来通知注入代码到该接口的实现类的重载了该实现类的子类中。
+注意，如果一个重载方法调用一个父方法，这种情况将导致注入规则代码不只一次被触发。尤其是构造方法，不可避免的会出现重复触发。通过添加条件限制，判断调用者的方法名，可以很容易的解决这一问题。
+RULE trace Object.finalize at initial call
+CLASS ^java.lang.Object
+METHOD finalize
+IF NOT callerEquals(“finalize”)
+DO System.out.println(“Finalizing “ + $0)
+ENDRULE
+这条规则使用了内建方法callerEquals。当通过super.finalize()条件为假，规则不会执行。
+
+重写接口规则
+^前缀也可以用在INTERFACE关键字中。正常情况下，接口规则只注入到直接实现接口方法的类。也就意味着接口规则病逝是注入到你感兴趣的类中。
+例如，ArrayList类继承自AbstractList。AbstractList实现了List接口。一个附着到INTERFACE List的的规则只会被注入到AbstractList中，不会注入到ArrayList中。这是有原因的，因为AbstractList中会实现List类中的所有方法。然而，^前缀可以用于实现期望的效果。如果规则附着到INTERFACE ^List，然后他会被注入到AbstractList和ArrayList中。
+注意：在接口与接口之间的继承、类与类之间的继承有微妙的差别。相同的类层次可以用来解释接口继承是被处理过的。
+再看一下Collection接口，该接口是List接口的父接口。当一个规则附着到INTERFACE Collection时，他将会被注入到实现了Collection的类中和一些实现了Collection子接口的实现类中。List继承自Collection，这也就意味着AbstractList在这个链式关系中也会被注入规则。ArrayList类将不会被注入代码，因为该类中所有重写的方法都在AbstractList中被实现了。如果你想让这个规则注入到ArrayList重写的方法中，你可以通过使用INTERFACE ^Collection实现。
+
+
+
+
+
+
+
+
+
 
 
