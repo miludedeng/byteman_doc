@@ -84,6 +84,75 @@ ENDRULE
 再看一下Collection接口，该接口是List接口的父接口。当一个规则附着到INTERFACE Collection时，他将会被注入到实现了Collection的类中和一些实现了Collection子接口的实现类中。List继承自Collection，这也就意味着AbstractList在这个链式关系中也会被注入规则。ArrayList类将不会被注入代码，因为该类中所有重写的方法都在AbstractList中被实现了。如果你想让这个规则注入到ArrayList重写的方法中，你可以通过使用INTERFACE ^Collection实现。
 
 
+指定位置
+下面的例子中指定了方法触发器的位置要么是通过指定行号指定精确位置要么是使用AT LINE或默认的在方法的开头。显然，指定行号可以在执行中指定任何位置，并且容易和方便。然而，这种方式不适合自动化测试中使用，测试中的代码可能会被频繁的修改。显然当程序的代码修改了，相关的测试代码也需要修改。但是修改代码会的行号，行号也会改变。这将导致测试脚本中的行号失效。幸运的是，还有很多种其他的方法指定触发器应该插入到目标方法的位置。例如，
+# location specifier example
+# RULE countdown at commit
+# CLASS CoordinatorEngine
+# METHOD commit
+# AFTER WRITE $current
+# . . .
+# ENDRULE
+current前面的前缀$标识一个本地变量，或者是一个方法的参数。在这个例子中，current是一个枚举变量，在CoordinatorEngine.commit方法的开头声明和初始化。
+public State commit()
+{
+ final State current ;
+ synchronized(this)
+ {
+   current = this.state ;
+   if (current == State.STATE_PREPARED_SUCCESS) {
+     . . .
+所以，当字节码的第一次更新栈，存储current的写操作时触发点就被立即插入。在源码层面上讲，就是触发点在源码的本地变量current初始化之后插入。
+下面的规则把触发器的位置插入到第一次读取字段recovered:
+# location specifier example 2
+# RULE add countdown at recreate
+# CLASS CoordinatorEngine
+# METHOD <init>
+# AT READ CoordinatorEngine.recovered
+# . . .
+# ENDRULE
+注意：上面的李子忠字段类型被限制，以确保写操作是属于CoordinatorEngine类的实例。如果没有类型限定，可能会匹配任何名为recovered的字段。
+一下是所有可以雨来指定位置的方式：
+AT ENTRY
+AT EXIT
+AT LINE number
+AT READ [type .] field [count | ALL ]
+AT READ $var-or-idx [count | ALL ]
+AFTER READ [ type .] field [count | ALL ]
+AFTER READ $var-or-idx [count | ALL ]
+AT WRITE [ type .] field [count | ALL ]
+AT WRITE $var-or-idx [count | ALL ]
+AFTER WRITE [ type .] field [count | ALL ]
+AFTER WRITE $var-or-idx [count | ALL ]
+AT INVOKE [ type .] method [ ( argtypes ) ] [count | ALL ]
+AFTER INVOKE [ type .] method [ ( argtypes ) ][count | ALL ]
+AT SYNCHRONIZE [count | ALL ]
+AFTER SYNCHRONIZE [count | ALL ]
+AT THROW [count | ALL ]
+如果需要指定位置，位置指定符必须紧跟在METHOD的下一行。如果没有指定位置，默认是AT ENTRY。
+AT ENTRY通常是指定触发点在指定方法的第一个可执行语句之前。例外情况是在构造方法中，触发点是在super之后的第一条语句之前的位置。这对于保证规则不会砸实例的构造之前绑定或操作。
+AT EXIT指名触发点在一个方法正常返回是注入（即在隐性或显示的声明return的地方，抛出异常的除外）。
+AT LINE
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
