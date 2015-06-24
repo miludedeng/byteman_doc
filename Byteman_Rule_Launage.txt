@@ -84,7 +84,7 @@ ENDRULE
 再看一下Collection接口，该接口是List接口的父接口。当一个规则附着到INTERFACE Collection时，他将会被注入到实现了Collection的类中和一些实现了Collection子接口的实现类中。List继承自Collection，这也就意味着AbstractList在这个链式关系中也会被注入规则。ArrayList类将不会被注入代码，因为该类中所有重写的方法都在AbstractList中被实现了。如果你想让这个规则注入到ArrayList重写的方法中，你可以通过使用INTERFACE ^Collection实现。
 
 
-指定位置
+位置指定符
 下面的例子中指定了方法触发器的位置要么是通过指定行号指定精确位置要么是使用AT LINE或默认的在方法的开头。显然，指定行号可以在执行中指定任何位置，并且容易和方便。然而，这种方式不适合自动化测试中使用，测试中的代码可能会被频繁的修改。显然当程序的代码修改了，相关的测试代码也需要修改。但是修改代码会的行号，行号也会改变。这将导致测试脚本中的行号失效。幸运的是，还有很多种其他的方法指定触发器应该插入到目标方法的位置。例如，
 # location specifier example
 # RULE countdown at commit
