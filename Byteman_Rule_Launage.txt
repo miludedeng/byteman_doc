@@ -30,12 +30,12 @@ ENDRULE
 该例中指定了一个名为CoordinatorEngine的类，不考虑它是属于哪个包。当有一个这个名字的类被加载，agent将会将一个触发点插入到名为commit的方法中。如果有多个重载的方法，将都会被插入触发点。
 通过添加方法参数类型列表和返回值类型的方式可以精确匹配一个方法，例如：
 # class and method example 2
-# RULE commit with no arguments on wst11 coordinator engine
-# CLASS com.arjuna.wst11.messaging.engines.CoordinatorEngine
-# METHOD State commit()
-# AT LINE 324
-# . . .
-# ENDRULE
+RULE commit with no arguments on wst11 coordinator engine
+CLASS com.arjuna.wst11.messaging.engines.CoordinatorEngine
+METHOD State commit()
+AT LINE 324
+. . .
+ENDRULE
 这个规则将只匹配com.arjuna.wst11.messaging.engines包里的CoordinatorEngine类，并且精确匹配无参的、返回值为State的commit方法。注意，在这个列子中State类所在的包没有指明。在类型检查时通过方法的返回值判断该类所处的包。
 上面的例子中通过AT LINE指定插入位置。跟在这个标记后面的参数必须是一个整数的行号。它指定了触发器插入到类的源码对应的行号。
 注意：
@@ -44,11 +44,11 @@ ENDRULE
 类规则和接口规则
 Byteman规则可以在类和接口中使用。如果CLASS关键字被INTERFACE替换，该规则将会被注入到接口的实现类中。例如下面的规则：
 # interface rule example
-# RULE commit with no arguments on any engine
-# INTERFACE com.arjuna.wst11.messaging.engines.Engine
-# METHOD commit()
-# . . .
-# ENDRULE
+RULE commit with no arguments on any engine
+INTERFACE com.arjuna.wst11.messaging.engines.Engine
+METHOD commit()
+. . .
+ENDRULE
 这个规则会注册到接口Engine的commit方法中。如果Engine有CoordinatorEngine和ParticipanEngine，则改规则会有两个触发点。一个是在CoordinatorEngine.commit()的开头，另一个是在ParticipanEngine.commit()方法的开头。该规则保证接口的所有实现类中都会有一个触发点。
 
 重写规则
@@ -87,12 +87,12 @@ ENDRULE
 位置指定符
 下面的例子中指定了方法触发器的位置要么是通过指定行号指定精确位置要么是使用AT LINE或默认的在方法的开头。显然，指定行号可以在执行中指定任何位置，并且容易和方便。然而，这种方式不适合自动化测试中使用，测试中的代码可能会被频繁的修改。显然当程序的代码修改了，相关的测试代码也需要修改。但是修改代码会的行号，行号也会改变。这将导致测试脚本中的行号失效。幸运的是，还有很多种其他的方法指定触发器应该插入到目标方法的位置。例如，
 # location specifier example
-# RULE countdown at commit
-# CLASS CoordinatorEngine
-# METHOD commit
-# AFTER WRITE $current
-# . . .
-# ENDRULE
+RULE countdown at commit
+CLASS CoordinatorEngine
+METHOD commit
+AFTER WRITE $current
+. . .
+ENDRULE
 current前面的前缀$标识一个本地变量，或者是一个方法的参数。在这个例子中，current是一个枚举变量，在CoordinatorEngine.commit方法的开头声明和初始化。
 public State commit()
 {
@@ -105,12 +105,12 @@ public State commit()
 所以，当字节码的第一次更新栈，存储current的写操作时触发点就被立即插入。在源码层面上讲，就是触发点在源码的本地变量current初始化之后插入。
 下面的规则把触发器的位置插入到第一次读取字段recovered:
 # location specifier example 2
-# RULE add countdown at recreate
-# CLASS CoordinatorEngine
-# METHOD <init>
-# AT READ CoordinatorEngine.recovered
-# . . .
-# ENDRULE
+RULE add countdown at recreate
+CLASS CoordinatorEngine
+METHOD <init>
+AT READ CoordinatorEngine.recovered
+. . .
+ENDRULE
 注意：上面的李子忠字段类型被限制，以确保写操作是属于CoordinatorEngine类的实例。如果没有类型限定，可能会匹配任何名为recovered的字段。
 一下是所有可以雨来指定位置的方式：
 AT ENTRY
@@ -144,7 +144,47 @@ AT SYNCHRONIZE和AFTER SYNCHRONIZE指定符表示同步代码块在目标方法�
 AT THROW指定符表示一个异常抛出操作作为出发方法的出发点。该指定符可以通过一个限定包名和类型的异常。如果指定了count为N,则在第N个位置throw处触发。如果关键字ALL被指定，则所有地方的throw都会被插入触发点。
 
 规则绑定
+规则中包含一个BIND标识符，紧随其后的是一个计算出来的变量的值，被规则中的变量所引用。这些变量是在IF后的condition语句之前被计算出来。例如：
+# binding example
+RULE countdown at commit
+CLASS com.arjuna.wst11.messaging.engines.CoordinatorEngine
+METHOD commit
+AT READ state
+BIND engine:CoordinatorEngine = $0;
+ recovered:boolean = engine.isRecovered();
+ identifier:String = engine.getId()
+  . . .
+ENDRULE
+该规则中创建了一个engine的变量。当commit方法被触发，这个变量绑定了commit的方法的第一个参数引用，使用$0表示（如果commit是一个静态方法，使用$0引用将会返回一个类型检查错误）。触发方法的参数引用可以使用索引，$0,$1,$2等表示。engine变量的声明指定了CoordinatorEngine类型。类型声明并不是必需的，因为它可以通过$0的类型确定。
+类似engine变量，变量recovered和identifier绑定了一个表达式。注意，engine变量的绑定必须要在这两个表达式之前。另外，这两个变量也指定了类型，这两个类型并不是必须的。
+BIND NOTHING在规则中是指规则并不需要任何绑定。也可以把BIND省略。
 
+规则表达式
+表达式在＝操作符的右边，在事件绑定中，可以是一个简单的表达式。例如
+*引用一个之前绑定的变量
+*引用触发方法的变量
+*引用触发点范围内的本地变量
+*引用特殊变量$!,$^,$#,$*,$@,$CLASS,$METHOD
+*静态字段引用
+*原始字面值
+*字段访问
+*静态或实例变量调用
+*内置操作调用
+注意，内置操作将在下面做详细解释。
+表达式可以使用java运算符将多个表达式混合，如+，-，*，/，%，&，|，^，&&，||，！，＝，==，!=，<，<=，>，>=，new等。还有三元运算符?:。类型检查器对于不管是简单表达式还是复杂表达式都尽可能做的最好。如果已知engine变量的类型，它将会通过反射推断engine.recovered字段的类型和engine.isRecovered()方法的返回类型。
+注意：
+*throw和return操作在规则行为中只能作为最后的action.
+*表达式必须服从规则的优先级顺序和结合性。
+*触发方法的接受者和参数的引用可以使用索引$0(在静态方法中无效)，$1等。如果方法是使用debug选项编译，那么符号引用也可以使用。所以，例如$this、$myArg可以被用作$0、$1的别名（如果方法的第一个参数声明的名称是myArg）。
+*如果出发方法使用debug选项编译，则本地变量的引用可以使用同样的符号引用方法的参数。所以，如果变量idx在触发点的作用域范围内，则可以使用$idx引用该值。
+*特殊变量提供了访问触发方法数据的方式。一下是七种特殊变量：
+1）$!是在AT EXIT规则中绑定了方法的返回值的变量。它的类型和触发方法的返回类型一致。如果触发方法返回类型是void，则该规则将会失败。
+2）在AFTER INVOKE规则中$!也是可用的，并且绑定了返回值。它的类型和调用的返回类型是一样的。如果调用方法返回值是void，则该规则会失败。
+3）$^只在AT THROW规则中可用，并绑定了throwable。它的类型就是Throwable。
+4）
+5）
+6）
+7）
 
 
 
